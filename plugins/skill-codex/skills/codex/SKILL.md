@@ -16,7 +16,9 @@ description: Use when the user asks to run Codex CLI (codex exec, codex resume) 
    - `-C, --cd <DIR>`
    - `--skip-git-repo-check`
    - `"your prompt here"` (as final positional argument)
-4. Always use --skip-git-repo-check.
+4. Use `--skip-git-repo-check` as follows:
+   - **`read-only` mode**: always use — no risk since Codex cannot modify files.
+   - **`workspace-write` or `danger-full-access` mode**: check whether the working directory is a git repository first. If it is, omit the flag so Codex can leverage git history for rollback protection. If it is not a git repo, warn the user: *"This directory has no git history. Codex will modify files without version control protection — changes cannot be rolled back via git."* Then proceed only after user confirmation.
 5. When continuing a previous session, use `codex exec --skip-git-repo-check resume --last` via stdin. When resuming don't use any configuration flags unless explicitly requested by the user e.g. if he species the model or the reasoning effort when requesting to resume a session. Resume syntax: `echo "your prompt here" | codex exec --skip-git-repo-check resume --last 2>/dev/null`. All flags have to be inserted between exec and resume.
 6. **IMPORTANT**: By default, append `2>/dev/null` to all `codex exec` commands to suppress thinking tokens (stderr). Only show stderr if the user explicitly requests to see thinking tokens or if debugging is needed.
 7. **IMPORTANT (stdin)**: `codex exec` always reads stdin and concatenates it with the positional prompt -- even when the prompt is fully supplied as a positional argument. If stdin is not closed, codex blocks forever. When invoking from a harness (background tasks, hooks, scripts where stdin is not a TTY but also not closed), explicitly redirect stdin: append `</dev/null` to the command, e.g. `codex exec ... "prompt" </dev/null 2>/dev/null`. Symptom of getting this wrong: zero bytes of stdout, zero CPU accumulated, process appears hung indefinitely.
@@ -26,9 +28,11 @@ description: Use when the user asks to run Codex CLI (codex exec, codex resume) 
 ### Quick Reference
 | Use case | Sandbox mode | Key flags |
 | --- | --- | --- |
-| Read-only review or analysis | `read-only` | `--sandbox read-only 2>/dev/null` |
-| Apply local edits | `workspace-write` | `--sandbox workspace-write --full-auto 2>/dev/null` |
-| Permit network or broad access | `danger-full-access` | `--sandbox danger-full-access --full-auto 2>/dev/null` |
+| Read-only review or analysis | `read-only` | `--sandbox read-only --skip-git-repo-check 2>/dev/null` |
+| Apply local edits (git repo) | `workspace-write` | `--sandbox workspace-write --full-auto 2>/dev/null` |
+| Apply local edits (no git repo) | `workspace-write` | `--sandbox workspace-write --full-auto --skip-git-repo-check 2>/dev/null` (warn user first) |
+| Permit network or broad access (git repo) | `danger-full-access` | `--sandbox danger-full-access --full-auto 2>/dev/null` |
+| Permit network or broad access (no git repo) | `danger-full-access` | `--sandbox danger-full-access --full-auto --skip-git-repo-check 2>/dev/null` (warn user first) |
 | Resume recent session | Inherited from original | `echo "prompt" \| codex exec --skip-git-repo-check resume --last 2>/dev/null` (no flags allowed) |
 | Run from another directory | Match task needs | `-C <DIR>` plus other flags `2>/dev/null` |
 
@@ -77,5 +81,5 @@ Codex is powered by OpenAI models with their own knowledge cutoffs and limitatio
 
 ## Error Handling
 - Stop and report failures whenever `codex --version` or a `codex exec` command exits non-zero; request direction before retrying.
-- Before you use high-impact flags (`--full-auto`, `--sandbox danger-full-access`, `--skip-git-repo-check`) ask the user for permission using AskUserQuestion unless it was already given.
+- Before you use high-impact flags (`--full-auto`, `--sandbox danger-full-access`) ask the user for permission using AskUserQuestion unless it was already given. For `--skip-git-repo-check` in `workspace-write` or `danger-full-access` mode, warn the user that git rollback protection is unavailable (see item 4 above).
 - When output includes warnings or partial results, summarize them and ask how to adjust using `AskUserQuestion`.
