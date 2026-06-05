@@ -9,9 +9,9 @@ description: Use when the user asks to run OpenCode CLI (opencode run) or refere
 
 1. Ask the user (via `AskUserQuestion`) which model to run (format: `provider/model`, e.g. `anthropic/claude-sonnet-4-20250514`, `openai/gpt-4.1`) AND which variant/reasoning effort to use in a **single prompt with two questions**.
 2. Select the agent mode required for the task:
-   - **`plan`**: for analysis, code review, exploration — reads freely, but requires explicit user approval before making edits or running commands (plan_enter/plan_exit gating).
+   - **`plan`**: for analysis, code review, exploration — requires explicit user approval before making edits or running bash commands (plan_enter/plan_exit gating). Note: this is approval-based gating, **not** filesystem-enforced read-only like Codex's `--sandbox read-only`.
    - **`build`** (full-access): for edits, refactoring, generation — can modify files and run commands without gating.
-   Default to `plan` unless edits are necessary.
+   Default to `plan` unless edits are necessary. Run `opencode agent list` to see all available agents.
 3. Assemble the command with the appropriate options:
    - `-m, --model <provider/model>`
    - `--variant <reasoning-effort>`
@@ -19,13 +19,14 @@ description: Use when the user asks to run OpenCode CLI (opencode run) or refere
    - `--dir <DIR>`
    - `--thinking` (show CoT reasoning — useful for analysis tasks)
    - `-f, --file <FILE>` (attach file to message)
-   - `--format <default|json>`
-   - `"your prompt here"` (as final positional argument)
-4. When continuing a previous session, use `opencode run --continue "your prompt here"`. To resume a specific session: `opencode run --session <session-id> "your prompt here"`. To fork a session (explore without modifying original): add `--fork`. No special stdin piping needed — OpenCode handles session continuation natively.
+   - `--format <default|json>` (omit for human-readable; use `json` for structured parsing)
+   - `"your prompt here"` (as final positional argument, or use `--prompt <TEXT>`)
+4. When continuing a previous session, use `opencode run --continue "your prompt here"`. To resume a specific session: `opencode run --session <session-id> "your prompt here"`. To fork a session (branch off without modifying the original): add `--fork` (requires `--continue` or `--session`). No special stdin piping needed — OpenCode handles session continuation natively.
 5. **IMPORTANT**: Use `--format json` when structured output is needed for parsing. Otherwise omit — `default` is already the implicit format.
-6. Run the command, capture stdout/stderr, and summarize the outcome for the user.
-7. After OpenCode completes, optionally run `opencode stats` to report token usage and cost.
-8. **After OpenCode completes**, inform the user: "You can resume this OpenCode session at any time by saying 'opencode resume' or asking me to continue with additional analysis or changes."
+6. **IMPORTANT (stdin)**: OpenCode reads stdin in `run` mode. If invoking from a harness where stdin is not a TTY but also not closed, redirect stdin: append `</dev/null` to the command to prevent blocking.
+7. Run the command, capture stdout/stderr, and summarize the outcome for the user.
+8. After OpenCode completes, optionally run `opencode stats` to report token usage and cost.
+9. **After OpenCode completes**, inform the user: "You can resume this OpenCode session at any time by saying 'opencode continue' or asking me to continue with additional analysis or changes."
 
 ### Quick Reference
 
@@ -34,11 +35,11 @@ description: Use when the user asks to run OpenCode CLI (opencode run) or refere
 | Read-only review or analysis | `plan` | `--agent plan` |
 | Analysis with CoT reasoning | `plan` | `--agent plan --thinking` |
 | Apply local edits | `build` | `--agent build` |
-| Structured output for parsing | `build` | `--agent build --format json` |
+| Structured output for parsing | any | `--format json` |
 | Attach file to prompt | any | `-f <file>` |
 | Resume recent session | Inherited | `--continue "prompt"` |
 | Resume specific session | Inherited | `--session <id> "prompt"` |
-| Fork session (explore safely) | Inherited | `--continue --fork "prompt"` |
+| Fork session (branch off) | Inherited | `--continue --fork "prompt"` |
 | Run from another directory | Match task needs | `--dir <DIR>` plus other flags |
 
 ## Model Selection
@@ -71,7 +72,7 @@ OpenCode runs synchronously in `run` mode and streams output. There is no silent
 ## Following Up
 
 - After every `opencode run` command, use `AskUserQuestion` to confirm next steps or decide whether to continue the session.
-- When continuing, use `--continue "new prompt"` or `--session <id> "new prompt"`. Add `--fork` to explore without modifying the original session. The continued session automatically uses the same model and agent from the original session.
+- When continuing, use `--continue "new prompt"` or `--session <id> "new prompt"`. Add `--fork` to branch off without modifying the original session (fork creates a new session copy). The continued session automatically uses the same model and agent from the original session.
 - Restate the chosen model, variant, and agent mode when proposing follow-up actions.
 
 ## Critical Evaluation of OpenCode Output
@@ -102,4 +103,5 @@ OpenCode can use various LLM backends with their own knowledge cutoffs and limit
 ## Error Handling
 
 - Stop and report failures whenever an `opencode run` command exits non-zero; request direction before retrying.
+- Run `opencode --version` as a pre-flight health check if OpenCode has not been used recently in the session.
 - When output includes warnings or partial results, summarize them and ask how to adjust using AskUserQuestion.

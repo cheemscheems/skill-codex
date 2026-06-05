@@ -12,15 +12,15 @@ description: Use when the user asks to run Codex CLI (codex exec, codex resume) 
    - `-m, --model <MODEL>`
    - `--config model_reasoning_effort="<xhigh|high|medium|low>"`
    - `--sandbox <read-only|workspace-write|danger-full-access>`
-   - `--full-auto`
+   - `--ask-for-approval <untrusted|on-request|never>` (controls approval prompts; `never` for CI/automation)
    - `-C, --cd <DIR>`
    - `--skip-git-repo-check`
    - `"your prompt here"` (as final positional argument)
 4. Use `--skip-git-repo-check` as follows:
    - **`read-only` mode**: always use — no risk since Codex cannot modify files.
    - **`workspace-write` or `danger-full-access` mode**: check whether the working directory is a git repository first. If it is, omit the flag so Codex can leverage git history for rollback protection. If it is not a git repo, warn the user: *"This directory has no git history. Codex will modify files without version control protection — changes cannot be rolled back via git."* Then proceed only after user confirmation.
-5. When continuing a previous session, use `codex exec --skip-git-repo-check resume --last` via stdin. When resuming don't use any configuration flags unless explicitly requested by the user e.g. if he species the model or the reasoning effort when requesting to resume a session. Resume syntax: `echo "your prompt here" | codex exec --skip-git-repo-check resume --last 2>/dev/null`. All flags have to be inserted between exec and resume.
-6. **IMPORTANT**: By default, append `2>/dev/null` to all `codex exec` commands to suppress thinking tokens (stderr). Only show stderr if the user explicitly requests to see thinking tokens or if debugging is needed.
+5. When continuing a previous session, use `codex exec resume --last` via stdin. Resume syntax: `echo "your prompt here" | codex exec --skip-git-repo-check resume --last 2>/dev/null`. On resume, the session inherits the original model, reasoning effort, and sandbox mode. Do **not** pass configuration flags (`-m`, `--config`, `--sandbox`) on resume unless the user explicitly requests a change — only operational flags like `--skip-git-repo-check` are appropriate.
+6. **IMPORTANT**: By default, append `2>/dev/null` to all `codex exec` commands to suppress thinking tokens (stderr). Only show stderr if the user explicitly requests to see thinking tokens or if debugging is needed. Alternatively, use `--json` for structured JSONL streaming output.
 7. **IMPORTANT (stdin)**: `codex exec` always reads stdin and concatenates it with the positional prompt -- even when the prompt is fully supplied as a positional argument. If stdin is not closed, codex blocks forever. When invoking from a harness (background tasks, hooks, scripts where stdin is not a TTY but also not closed), explicitly redirect stdin: append `</dev/null` to the command, e.g. `codex exec ... "prompt" </dev/null 2>/dev/null`. Symptom of getting this wrong: zero bytes of stdout, zero CPU accumulated, process appears hung indefinitely.
 8. Run the command, capture stdout/stderr (filtered as appropriate), and summarize the outcome for the user.
 9. **After Codex completes**, inform the user: "You can resume this Codex session at any time by saying 'codex resume' or asking me to continue with additional analysis or changes."
@@ -29,16 +29,17 @@ description: Use when the user asks to run Codex CLI (codex exec, codex resume) 
 | Use case | Sandbox mode | Key flags |
 | --- | --- | --- |
 | Read-only review or analysis | `read-only` | `--sandbox read-only --skip-git-repo-check 2>/dev/null` |
-| Apply local edits (git repo) | `workspace-write` | `--sandbox workspace-write --full-auto 2>/dev/null` |
-| Apply local edits (no git repo) | `workspace-write` | `--sandbox workspace-write --full-auto --skip-git-repo-check 2>/dev/null` (warn user first) |
-| Permit network or broad access (git repo) | `danger-full-access` | `--sandbox danger-full-access --full-auto 2>/dev/null` |
-| Permit network or broad access (no git repo) | `danger-full-access` | `--sandbox danger-full-access --full-auto --skip-git-repo-check 2>/dev/null` (warn user first) |
-| Resume recent session | Inherited from original | `echo "prompt" \| codex exec --skip-git-repo-check resume --last 2>/dev/null` (no flags allowed) |
+| Apply local edits (git repo) | `workspace-write` | `--sandbox workspace-write --ask-for-approval on-request 2>/dev/null` |
+| Apply local edits (no git repo) | `workspace-write` | `--sandbox workspace-write --ask-for-approval on-request --skip-git-repo-check 2>/dev/null` (warn user first) |
+| Permit network or broad access (git repo) | `danger-full-access` | `--sandbox danger-full-access --ask-for-approval on-request 2>/dev/null` |
+| Permit network or broad access (no git repo) | `danger-full-access` | `--sandbox danger-full-access --ask-for-approval on-request --skip-git-repo-check 2>/dev/null` (warn user first) |
+| CI / non-interactive (no approval) | `workspace-write` | `--sandbox workspace-write --ask-for-approval never --skip-git-repo-check 2>/dev/null` |
+| Resume recent session | Inherited | `echo "prompt" \| codex exec --skip-git-repo-check resume --last 2>/dev┘null` (inherits model/effort/sandbox) |
 | Run from another directory | Match task needs | `-C <DIR>` plus other flags `2>/dev/null` |
 
 ## Execution timeouts
 
-Codex produces **no intermediate output** — it writes the result only at completion. If the process is killed before finishing, the output file is silently empty (no error).
+Codex produces **no intermediate output** by default — it writes the result only at completion. If the process is killed before finishing, the output file is silently empty (no error). Use `--json` for structured JSONL streaming if intermediate progress is needed.
 
 **Preferred approach:** run synchronously — eliminates timeout risk entirely and the conversation waits for the result anyway.
 
@@ -53,7 +54,7 @@ Codex produces **no intermediate output** — it writes the result only at compl
 
 ## Following Up
 - After every `codex` command, immediately use `AskUserQuestion` to confirm next steps, collect clarifications, or decide whether to resume with `codex exec resume --last`.
-- When resuming, pipe the new prompt via stdin: `echo "new prompt" | codex exec resume --last 2>/dev/null`. The resumed session automatically uses the same model, reasoning effort, and sandbox mode from the original session.
+- When resuming, pipe the new prompt via stdin: `echo "new prompt" | codex exec --skip-git-repo-check resume --last 2>/dev/null`. The resumed session automatically uses the same model, reasoning effort, and sandbox mode from the original session.
 - Restate the chosen model, reasoning effort, and sandbox mode when proposing follow-up actions.
 
 ## Critical Evaluation of Codex Output
@@ -80,6 +81,6 @@ Codex is powered by OpenAI models with their own knowledge cutoffs and limitatio
 5. Let the user decide how to proceed if there's genuine ambiguity
 
 ## Error Handling
-- Stop and report failures whenever `codex --version` or a `codex exec` command exits non-zero; request direction before retrying.
-- Before you use high-impact flags (`--full-auto`, `--sandbox danger-full-access`) ask the user for permission using AskUserQuestion unless it was already given. For `--skip-git-repo-check` in `workspace-write` or `danger-full-access` mode, warn the user that git rollback protection is unavailable (see item 4 above).
-- When output includes warnings or partial results, summarize them and ask how to adjust using `AskUserQuestion`.
+- Stop and report failures whenever a `codex exec` command exits non-zero; request direction before retrying.
+- Before you use high-impact flags (`--ask-for-approval never`, `--sandbox danger-full-access`) ask the user for permission using AskUserQuestion unless it was already given. For `--skip-git-repo-check` in `workspace-write` or `danger-full-access` mode, warn the user that git rollback protection is unavailable (see item 4 above).
+- When output includes warnings or partial results, summarize them and ask how to adjust using AskUserQuestion.
