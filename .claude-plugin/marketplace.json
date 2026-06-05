@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "skill-codex",
-  "description": "Marketplace for the skill-codex plugin, enabling Claude Code to delegate tasks to OpenAI Codex CLI",
+  "description": "Marketplace for coding agent skills — Codex CLI and OpenCode CLI integrations for Claude Code",
   "owner": {
     "name": "skills-directory",
     "url": "https://github.com/skills-directory"
@@ -19,6 +19,21 @@
         "codex",
         "automation",
         "code-review"
+      ]
+    },
+    {
+      "name": "skill-opencode",
+      "source": "./plugins/skill-opencode",
+      "description": "Delegate prompts to OpenCode CLI for code analysis, refactoring, code review, and automated editing via any LLM provider",
+      "version": "1.0.0",
+      "category": "development",
+      "homepage": "https://github.com/sst/opencode",
+      "tags": [
+        "skill",
+        "opencode",
+        "automation",
+        "code-review",
+        "multi-provider"
       ]
     }
   ]
